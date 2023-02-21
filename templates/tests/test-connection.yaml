@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "cloud-event-consumer.fullname" . }}-test-connection"
+  labels:
+    {{- include "cloud-event-consumer.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args: ['{{ include "cloud-event-consumer.fullname" . }}:{{ .Values.service.port }}']
+  restartPolicy: Never

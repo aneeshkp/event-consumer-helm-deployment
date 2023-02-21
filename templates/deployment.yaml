@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-cne
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app: {{ .Chart.Name }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app: {{ .Chart.Name }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}  
+      serviceAccountName: {{ include "cloud-event-consumer.serviceAccountName" . }}
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: cloud-event-consumer
+          image: "{{ .Values.consumerImage.repository }}:{{ .Values.consumerImage.tag | default .Chart.AppVersion }}"
+          args:
+            - "--local-api-addr={{ .Values.consumerImage.args.localApiAddr }}"
+            - "--api-path={{ .Values.consumerImage.args.apiPath }}"
+            - "--api-addr={{ .Values.consumerImage.args.apiAddr }}"
+            - "--transport-type={{ .Values.consumerImage.args.transportType }}" 
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CONSUMER_TYPE
+              value: "{{ .Values.consumerImage.consumerType }}"
+            - name: ENABLE_STATUS_CHECK
+              value: "{{ .Values.consumerImage.enableStatusCheck }}"
+        - name: cloud-event-sidecar
+          image: "{{ .Values.sidecarImage.repository }}:{{ .Values.sidecarImage.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.sidecarImage.pullPolicy }}
+          args:
+            - "--metrics-addr={{ .Values.sidecarImage.args.metricsAddr }}"
+            - "--store-path={{ .Values.sidecarImage.args.storePath }}"
+            - "--transport-host={{ .Values.sidecarImage.args.transportHost }}"
+            - "--http-event-publishers={{ .Values.sidecarImage.args.httpEventPublishers }}"
+            - "--api-port={{ .Values.sidecarImage.args.apiPort }}"
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          volumeMounts:
+            - name: pubsubstore
+              mountPath: {{ .Values.sidecarImage.args.storePath }}
+          ports:
+            - name: metrics-port
+              containerPort: 9091
+            - name: sub-port
+              containerPort: 9043
+        - name: kube-rbac-proxy
+          image: quay.io/coreos/kube-rbac-proxy:v0.5.0
+          args:
+            - --logtostderr
+            - --secure-listen-address=:8443
+            - --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_RSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+            - --upstream=http://127.0.0.1:9091/
+            - --tls-private-key-file=/etc/metrics/tls.key
+            - --tls-cert-file=/etc/metrics/tls.crt
+          ports:
+            - containerPort: 8443
+              name: https
+          resources:
+            requests:
+              cpu: 10m
+              memory: 20Mi
+          volumeMounts:
+            - name: sidecar-certs
+              mountPath: /etc/metrics
+      volumes:
+        - name: pubsubstore
+          emptyDir: {}
+        - name: sidecar-certs
+          secret:
+            secretName: sidecar-consumer-secret

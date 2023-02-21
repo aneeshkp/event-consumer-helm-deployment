@@ -1,0 +1,87 @@
+# Default values for cloud-event-consumer.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+consumerImage:
+  repository: quay.io/redhat-cne/cloud-event-consumer
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "release-4.12"
+  consumerType: PTP
+  enableStatusCheck: "false"
+  args: 
+    localApiAddr: 127.0.0.1:9089
+    apiPath: /api/cloudNotifications/v1/
+    api-addr: 127.0.0.1:8089
+    tranbsport-type: HTTP #AMQ|HTTP
+sidecarImage:
+  repository: registry.redhat.io/openshift4/ose-cloud-event-proxy
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "v4.12"
+  args: 
+    metrics-addr: 127.0.0.1:9091
+    storePath: /store
+    transportHost: consumer-events-subscription-service.{{ .Release.namespace }}.svc.cluster.local:9043
+    httpEventPublishers: ptp-event-publisher-service-NODE_NAME.openshift-ptp.svc.cluster.local:9043
+    apiPort: 8089
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+namespace: cloud-events-helm
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: "sidecar-consumer-sa"
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 9043
+
+
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: 
+  node-role.kubernetes.io/worker: ""
+
+tolerations: []
+
+affinity: {}
